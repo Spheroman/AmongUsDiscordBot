@@ -285,7 +285,7 @@ async def picture(ctx):
     if ctx.message.attachments:
         attachment = ctx.message.attachments[0]
         if attachment.content_type.startswith("image"):
-            path = f"player_{ctx.author.name}.png"
+            path = f"players/{ctx.author.name}.png"
             await attachment.save(path)
             img = Image.open(path)
             img = remove(img)
@@ -305,7 +305,7 @@ def banner_gen(player):
             foreground = foreground.resize((750, foreground.height * 750 // foreground.width))
             location = (background.width // 2 - foreground.width // 2, 950 - foreground.height // 2)
             background.paste(foreground, location, foreground)
-        background.save(f"banner_{player.member.name}.png")
+        background.save(f"banner/{player.member.name}.png")
 
 
 @bot.command()
