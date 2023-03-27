@@ -20,6 +20,7 @@ last_meeting = 0
 sabotage = None
 meetings = 2
 votes = {}
+num_impostors = 1
 announcements = discord.utils.get(bot.get_all_channels(), name="game-announcements")
 
 
@@ -56,8 +57,13 @@ class Task:
 
 taskjson = json.load(open("tasks.json"))
 tasks = []
+commontasks = []
 for task in taskjson:
-    tasks.append(Task(task))
+    if task["type"] != "common":
+        tasks.append(Task(task))
+    else:
+        commontasks.append(Task(task))
+commontasks = random.choices(commontasks, k=2)
 
 
 class Player:
@@ -73,7 +79,7 @@ class Player:
         self.meetings = meetings
 
     def __str__(self):
-        return self.member.name
+        return self.member.display_name
 
     async def create_channel(self):
         overwrites = {
@@ -84,7 +90,7 @@ class Player:
             self.member: discord.PermissionOverwrite(read_messages=True)
         }
         category = discord.utils.get(self.member.guild.categories, name="Game Channels")
-        channel_name = f"{self.member.name.lower()}-private"
+        channel_name = f"{self.member.display_name.lower()}-private"
         self.channel = await self.member.guild.create_text_channel(channel_name, overwrites=overwrites,
                                                                    category=category)
 
@@ -96,7 +102,7 @@ class Player:
             self.embed = Embed("You are an Impostor!",
                                "Your job is to kill all the Crewmates before they complete all of their tasks.",
                                discord.Color.red())
-            self.embed.add_field("Kill", "To kill a Crewmate, use the command `!kill <player>`", inline=True)
+            self.embed.add_field("Kill", "To kill a Crewmate, use the command `!kill <players>`", inline=True)
             self.embed.add_field("Sabotage", "To sabotage, use the command `!sabotage`", inline=True)
             self.embed.set_footer("This message will update throughout the game.")
             self.embedmsg = await self.channel.send(embed=self.embed)
@@ -127,8 +133,7 @@ class Impostor(Player):
         self.embedmsg = player.embedmsg
         self.embed = player.embed
         self.role = "Impostor"
-        self.image = player.image
-        banner_gen(self)
+        self.image = banner_gen(self)
 
     async def update_embed(self):
         taskstrings = []
@@ -163,9 +168,28 @@ class Crewmate(Player):
         await self.channel.send(f"Task {task} completed!")
 
 
+@bot.event
+async def on_ready():
+    print("Bot is ready.")
+    await bot.change_presence(activity=discord.Game(name="Among Us"))
+    categories = list(category for i in bot.guilds for category in i.categories)
+    for category in categories:
+        if category.name == "Game Channels":
+            channels = category.channels
+            for channel in channels:
+                if channel.name != "game-announcements":
+                    await channel.delete()
+            if "game-announcements" not in [channel.name for channel in channels]:
+                await category.create_text_channel("game-announcements")
+
+
+
 @bot.command()
 async def join(ctx):
-    # Create player object and store in dictionary
+    if ctx.author.id in players:
+        await ctx.send("You are already in the game.")
+        return
+    # Create players object and store in dictionary
     player = Player(ctx.author, None)
     await player.create_channel()
     await player.member.add_roles(discord.utils.get(ctx.guild.roles, name="Player"))
@@ -203,13 +227,13 @@ async def vote(ctx, member: discord.Member):
         players[ctx.author.id].channel.send("You can only vote in your channel.")
         return
     if member.id not in players:
-        await ctx.send("That player is not in the game.")
+        await ctx.send("That players is not in the game.")
         return
     if not players[member.id].alive:
-        await ctx.send("That player is dead.")
+        await ctx.send("That players is dead.")
         return
     votes[ctx.author.id] = member.id
-    await ctx.send(f" have voted for {member.name}.")
+    await ctx.send(f" have voted for {member.display_name}.")
     await announcements.send(f"{ctx.author.name} has voted.")
     if len(votes) == len([value for value in players.values() if value.alive]):
         await end_meeting(ctx)
@@ -222,7 +246,7 @@ async def end_meeting(ctx):
         return
     await announcements.send("The meeting has ended.")
     await announcements.send(
-        f"Voting results:\n{'/n'.join([f'{players[key].member.name}: {players[value].member.name}' for key, value in votes.items()])}")
+        f"Voting results:\n{'/n'.join([f'{players[key].member.display_name}: {players[value].member.display_name}' for key, value in votes.items()])}")
     await announcements.send(vote_results())
 
 
@@ -238,46 +262,38 @@ def vote_results():
         return "Tie! Nobody is voted out."
     else:
         players[results[0][0]].alive = False
-        return f"{players[results[0][0]].member.name} was voted out."
+        return f"{players[results[0][0]].member.display_name} was voted out."
 
 
 async def assign_tasks():
     # Assign tasks to players
-    num_tasks = len(tasks)
-    num_players = len(players)
-    tasks_per_player = num_tasks // num_players
-    tasks_per_player += 1
-
-    all_players = list(players.values())
-    random.shuffle(all_players)
-
-    for i in range(num_tasks):
-        all_players[i % num_players].add_task(tasks[i])
-
-    # Send tasks to players
-    for player in all_players:
-        await player.update_embed()
+    for player in players.values():
+        player.tasks = []
+        player.tasks.append(i for i in commontasks)
+        for i in range(4):
+            player.tasks.append(random.choice(list(i for i in list(j for j in tasks if j.task_type == "short") if i not in player.tasks)))
+        for i in range(2):
+            player.tasks.append(random.choice(list(i for i in list(j for j in tasks if j.task_type == "long") if i not in player.tasks)))
 
 
 @bot.command()
 async def leave(ctx):
-    # Check if player is in game
+    # Check if players is in game
     if ctx.author.id not in players:
         await ctx.send("You are not in the game.")
         return
 
-    # Remove player from game
+    # Remove players from game
     player = players[ctx.author.id]
     await player.channel.delete()
     await player.member.remove_roles(discord.utils.get(ctx.guild.roles, name="Player"))
     del players[ctx.author.id]
-
     await ctx.send(f"{ctx.author.mention} has left the game.")
 
 
 @bot.command()
 async def picture(ctx):
-    # Check if player is in game
+    # Check if players is in game
     if ctx.author.id not in players:
         await ctx.send("You are not in the game.")
         return
@@ -285,7 +301,7 @@ async def picture(ctx):
     if ctx.message.attachments:
         attachment = ctx.message.attachments[0]
         if attachment.content_type.startswith("image"):
-            path = f"players/{ctx.author.name}.png"
+            path = f"players/{ctx.author.display_name}.png"
             await attachment.save(path)
             img = Image.open(path)
             img = remove(img)
@@ -305,11 +321,36 @@ def banner_gen(player):
             foreground = foreground.resize((750, foreground.height * 750 // foreground.width))
             location = (background.width // 2 - foreground.width // 2, 950 - foreground.height // 2)
             background.paste(foreground, location, foreground)
-        background.save(f"banner/{player.member.name}.png")
+        background.save(f"banner/{player.member.display_name}.png")
+    if player.role == "impostor":
+        return f"banner/impostor.png"
+
+
+def impostor_banner():
+    loc = 853
+    background = Image.open("impostor.png")
+    for player in players.values():
+        if player.role == "Impostor":
+            if num_impostors == 1:
+                if player.image:
+                    foreground = Image.open(player.image)
+                    foreground = foreground.resize((750, foreground.height * 750 // foreground.width))
+                    location = (background.width // 2 - foreground.width // 2, 950 - foreground.height // 2)
+                    background.paste(foreground, location, foreground)
+            else:
+                if player.image:
+                    foreground = Image.open(player.image)
+                    foreground = foreground.resize((750, foreground.height * 750 // foreground.width))
+                    location = (loc - foreground.width // 2, 950 - foreground.height // 2)
+                    background.paste(foreground, location, foreground)
+                    loc += loc
+
+    background.save(f"banner/impostor.png")
 
 
 @bot.command()
 async def start(ctx):
+    global num_impostors
     global game_started
     # Check if game has already started
     if game_started:
@@ -322,7 +363,6 @@ async def start(ctx):
         return
 
     # Assign roles
-    num_impostors = 1
     if len(players) >= 7:
         num_impostors = 2
 
@@ -335,10 +375,10 @@ async def start(ctx):
     for i in range(num_impostors, len(all_players)):
         await all_players[i].set_role("Crewmate")
 
+    impostor_banner()
     await assign_tasks()
 
     # Send banner to players
-
     game_started = True
     await ctx.send("Game has started!")
 
@@ -352,12 +392,12 @@ async def reset(ctx):
         await ctx.send("Only the game moderator can reset the game.")
         return
 
-    # Delete all player channels
+    # Delete all players channels
     for player in players.values():
         await player.channel.delete()
         await player.member.remove_roles(discord.utils.get(ctx.guild.roles, name="Player"))
 
-    # Clear the player list
+    # Clear the players list
     players.clear()
 
     game_started = False

@@ -1,3 +1,4 @@
-/banner/~.png
-/player/~.png
+/banner/
+/players/
 /.env
+/venv/
