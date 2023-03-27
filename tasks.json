@@ -1,20 +1,86 @@
 [
   {
-    "name": "task1",
+    "name": "task1c",
     "location": "place",
     "id": "something",
-    "type": "common"
+    "type": "common",
+    "visual": "false"
   },
   {
-    "name": "task2",
+    "name": "task2c",
     "location": "place",
     "id": "something",
-    "type": "common"
+    "type": "common",
+    "visual": "false"
   },
   {
-    "name": "task3",
+    "name": "task3c",
     "location": "place",
     "id": "something",
-    "type": "common"
+    "type": "common",
+    "visual": "false"
+  },
+  {
+    "name": "task4c",
+    "location": "place",
+    "id": "something",
+    "type": "common",
+    "visual": "false"
+  },
+  {
+    "name": "task5l",
+    "location": "place",
+    "id": "something",
+    "type": "long",
+    "visual": "false"
+  },
+  {
+    "name": "task6l",
+    "location": "place",
+    "id": "something",
+    "type": "long",
+    "visual": "false"
+  },
+  {
+    "name": "task7lv",
+    "location": "place",
+    "id": "something",
+    "type": "long",
+    "visual": "true"
+  },
+  {
+    "name": "task8s",
+    "location": "place",
+    "id": "something",
+    "type": "short",
+    "visual": "false"
+  },
+  {
+    "name": "task9s",
+    "location": "place",
+    "id": "something",
+    "type": "short",
+    "visual": "false"
+  },
+  {
+    "name": "task10s",
+    "location": "place",
+    "id": "something",
+    "type": "short",
+    "visual": "false"
+  },
+  {
+    "name": "task11s",
+    "location": "place",
+    "id": "something",
+    "type": "short",
+    "visual": "false"
+  },
+  {
+    "name": "task12sv",
+    "location": "place",
+    "id": "something",
+    "type": "short",
+    "visual": "true"
   }
 ]
