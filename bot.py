@@ -6,11 +6,14 @@ import os
 import json
 from rembg.bg import remove
 from PIL import Image
+import webserver
+import multiprocessing
 import time
 
 load_dotenv()
 token = os.getenv('TOKEN')
 bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
+server = webserver
 
 players = {}
 crewmates = []
@@ -21,6 +24,7 @@ sabotage = None
 meetings = 2
 votes = {}
 num_impostors = 1
+rand_ids = {}
 announcements = discord.utils.get(bot.get_all_channels(), name="announcements")
 
 class Embed(discord.Embed):
@@ -75,8 +79,9 @@ class Player:
         self.channel = channel
         self.embed = Embed("Welcome to the game!", "Please wait for people to join.", discord.Color.red())
         self.embedmsg = None
-        self.image = None
+        self.image = f"players/{member.display_name}.png"
         self.meetings = meetings
+        self.secret = None
 
     def __str__(self):
         return self.member.display_name
@@ -106,6 +111,7 @@ class Player:
             self.embed.add_field("Sabotage", "To sabotage, use the command `!sabotage`", inline=True)
             self.embed.set_footer("This message will update throughout the game.")
             self.embedmsg = await self.channel.send(embed=self.embed)
+            await self.channel.send(f"Your secret id is {self.secret}. Use this to login to the webpage.")
             impostor = Impostor(self)
             impostors.append(self.member.id)
             players[self.member.id] = impostor
@@ -135,6 +141,7 @@ class Impostor(Player):
         self.role = "Impostor"
         self.image = player.image
         self.banner = banner_gen(self)
+        self.secret = player.secret
 
     async def update_embed(self):
         taskstrings = []
@@ -156,6 +163,7 @@ class Crewmate(Player):
         self.embed = player.embed
         self.image = player.image
         self.banner = banner_gen(self)
+        self.secret = player.secret
 
     async def update_embed(self):
         taskstrings = []
@@ -185,7 +193,7 @@ async def on_ready():
 
 
 @bot.command()
-async def join(ctx):
+async def join(ctx, msg=""):
     if ctx.author.id in players:
         await ctx.send("You are already in the game.")
         return
@@ -197,8 +205,7 @@ async def join(ctx):
     players[ctx.author.id] = player
 
     await ctx.send(f"{ctx.author.mention} has joined the game.")
-    if ctx.message.attachments:
-        await picture(ctx)
+    await picture(ctx, msg)
 
 
 @bot.command()
@@ -231,10 +238,10 @@ async def vote(ctx, member):
         return
     member = players[list(i.member.id for i in players.values() if i.member.display_name.lower() == member.lower())[0]].member
     if not players[member.id].alive:
-        await ctx.send("That players is dead.")
+        await ctx.send("That player is dead.")
         return
     votes[ctx.author.id] = member.id
-    await ctx.send(f" have voted for {member.display_name}.")
+    await ctx.send(f"You have voted for {member.display_name}.")
     await announcements.send(f"{ctx.author.name} has voted.")
     if len(votes) == len([value for value in players.values() if value.alive]):
         await end_meeting(ctx)
@@ -300,20 +307,29 @@ async def leave(ctx):
 
 
 @bot.command()
-async def picture(ctx):
+async def picture(ctx, msg=""):
     # Check if players is in game
     if ctx.author.id not in players:
         await ctx.send("You are not in the game.")
         return
-
-    if ctx.message.attachments:
+    if len(ctx.message.attachments) == 0:
+        path = f"players/{ctx.author.display_name}.png"
+        await ctx.author.display_avatar.save(path)
+        if msg == "":
+            img = Image.open(path)
+            img = remove(img)
+            img.save(path)
+        await ctx.channel.send("Picture set. Is this okay?", file=discord.File(path))
+        players[ctx.author.id].image = path
+    else:
         attachment = ctx.message.attachments[0]
         if attachment.content_type.startswith("image"):
             path = f"players/{ctx.author.display_name}.png"
             await attachment.save(path)
-            img = Image.open(path)
-            img = remove(img)
-            img.save(path)
+            if msg == "":
+                img = Image.open(path)
+                img = remove(img)
+                img.save(path)
             await ctx.channel.send("Picture set. Is this okay?", file=discord.File(path))
             players[ctx.author.id].image = path
 
@@ -349,7 +365,6 @@ def impostor_banner():
                         foreground = foreground.resize((750, foreground.height * 750 // foreground.width))
                     location = (background.width // 2 - foreground.width // 2, 950 - foreground.height // 2)
                     background.paste(foreground, location, foreground)
-                    background.show()
             else:
                 if player.image:
                     foreground = Image.open(player.image)
@@ -362,9 +377,16 @@ def impostor_banner():
 
 @bot.command()
 async def start(ctx):
+    global rand_ids
     global num_impostors, announcements
     global game_started
     announcements = discord.utils.get(ctx.guild.channels, name="game-announcements")
+    nums = random.sample(range(10000, 99999), len(players.values()))
+    for player in players.values():
+        player.secret = nums.pop(0)
+        rand_ids.update({str(player.secret): player})
+    server.update(rand_ids)
+
     # Check if game has already started
     if game_started:
         await ctx.send("Game has already started.")
@@ -417,5 +439,16 @@ async def reset(ctx):
     await ctx.send("The game has been reset.")
 
 
-if __name__ == '__main__':
+async def test():
+    await announcements[0].send("test")
+
+
+def init(token):
+    print("Starting bot...")
     bot.run(token)
+
+
+if __name__ == '__main__':
+    cord = multiprocessing.Process(target=init, args=(token,))
+    cord.start()
+    server.app.run(debug=False)
